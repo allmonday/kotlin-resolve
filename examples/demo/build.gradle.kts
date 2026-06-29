@@ -21,5 +21,5 @@ kotlin {
 }
 
 application {
-    mainClass.set("demo.MainKt")
+    mainClass.set((project.findProperty("mainClass") as String?) ?: "demo.MainKt")
 }

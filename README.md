@@ -69,6 +69,50 @@ val resolver = Resolver(
 val resolved = resolver.resolve(tasks)   // one DB query, no N+1
 ```
 
+### Composing multiple levels
+
+Each `@Resolve` edge becomes one BFS level — stack them and the framework
+batches each level independently. Below, `Task → User → Team` produces exactly
+two DB queries regardless of list size:
+
+```kotlin
+data class TeamView(val id: Int, val name: String)
+
+data class UserView(
+    val id: Int,
+    val name: String,
+    val teamId: Int,
+    var team: TeamView? = null,        // level 2
+) {
+    @Resolve("team")
+    suspend fun resolveTeam(@LoaderDep("team") loader: DataLoader<Int, TeamView>) =
+        loader.load(teamId)
+}
+
+data class TaskView(
+    val id: Int,
+    val title: String,
+    val ownerId: Int,
+    var owner: UserView? = null,        // level 1
+) {
+    @Resolve("owner")
+    suspend fun resolveOwner(@LoaderDep("user") loader: DataLoader<Int, UserView>) =
+        loader.load(ownerId)
+}
+
+val resolver = Resolver(
+    loaderFactory = mapOf(
+        "user" to { DataLoader({ keys -> userDao.findByIds(keys) }, this) },
+        "team" to { DataLoader({ keys -> teamDao.findByIds(keys) }, this) },
+    ),
+)
+
+val resolved = resolver.resolve(tasks)
+// resolved[0].owner?.team?.name   ←   2 queries total, no N+1 at either level
+```
+
+Run it: `examples/demo/src/main/kotlin/demo/twolevel/TwoLevelDemo.kt`
+
 ### Annotated parameters
 
 | Annotation | Where | Purpose |
